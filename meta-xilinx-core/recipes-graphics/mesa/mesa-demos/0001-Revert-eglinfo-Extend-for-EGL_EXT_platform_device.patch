@@ -1,0 +1,196 @@
+From e8032c9bf1d03c56e191866c668630af443b7f7f Mon Sep 17 00:00:00 2001
+From: Quanyang Wang <quanyang.wang@windriver.com>
+Date: Tue, 21 Jun 2022 19:26:44 +0800
+Subject: [PATCH] Revert "eglinfo: Extend for EGL_EXT_platform_device."
+
+This patch reverts commit 1973b27fec51 ("eglinfo: Add support for
+surfaceless EGL platform") and commit 99f95b3888f ("eglinfo: Extend for
+EGL_EXT_platform_device.").
+
+The version of eglext.h which provided by libmali-xlnx is 21116 and
+no EGL_PLATFORM_* definition there. So we need revert all commits which
+is using EGL_PLATFORM_* definition.
+
+Upstream-Status: Inappropriate [WR Linux specific change]
+
+Signed-off-by: Quanyang Wang <quanyang.wang@windriver.com>
+---
+ src/egl/opengl/eglinfo.c | 124 ++++++++-------------------------------
+ 1 file changed, 23 insertions(+), 101 deletions(-)
+
+diff --git a/src/egl/opengl/eglinfo.c b/src/egl/opengl/eglinfo.c
+index 72fe45a9..13785738 100644
+--- a/src/egl/opengl/eglinfo.c
++++ b/src/egl/opengl/eglinfo.c
+@@ -135,11 +135,27 @@ PrintConfigs(EGLDisplay d)
+ 
+ 
+ static const char *
+-PrintExtensions(const char *extensions)
++PrintExtensions(EGLDisplay d)
+ {
+-   const char *p, *end, *next;
++   const char *extensions, *p, *end, *next;
+    int column;
+ 
++   extensions = eglQueryString(d, EGL_EXTENSIONS);
++   if (!extensions)
++      return NULL;
++
++#ifdef EGL_MESA_query_driver
++   if (strstr(extensions, "EGL_MESA_query_driver")) {
++      PFNEGLGETDISPLAYDRIVERNAMEPROC getDisplayDriverName =
++         (PFNEGLGETDISPLAYDRIVERNAMEPROC)
++            eglGetProcAddress("eglGetDisplayDriverName");
++      printf("EGL driver name: %s\n", getDisplayDriverName(d));
++   }
++#endif
++
++   puts(d == EGL_NO_DISPLAY ? "EGL client extensions string:" :
++                              "EGL extensions string:");
++
+    column = 0;
+    end = extensions + strlen(extensions);
+ 
+@@ -169,50 +185,6 @@ PrintExtensions(const char *extensions)
+    return extensions;
+ }
+ 
+-
+-static const char *
+-PrintDisplayExtensions(EGLDisplay d)
+-{
+-   const char *extensions;
+-
+-   extensions = eglQueryString(d, EGL_EXTENSIONS);
+-   if (!extensions)
+-      return NULL;
+-
+-#ifdef EGL_MESA_query_driver
+-   if (strstr(extensions, "EGL_MESA_query_driver")) {
+-      PFNEGLGETDISPLAYDRIVERNAMEPROC getDisplayDriverName =
+-         (PFNEGLGETDISPLAYDRIVERNAMEPROC)
+-            eglGetProcAddress("eglGetDisplayDriverName");
+-      printf("EGL driver name: %s\n", getDisplayDriverName(d));
+-   }
+-#endif
+-
+-   puts(d == EGL_NO_DISPLAY ? "EGL client extensions string:" :
+-                              "EGL extensions string:");
+-
+-   return PrintExtensions(extensions);
+-}
+-
+-
+-static const char *
+-PrintDeviceExtensions(EGLDeviceEXT d)
+-{
+-   PFNEGLQUERYDEVICESTRINGEXTPROC queryDeviceString =
+-     (PFNEGLQUERYDEVICESTRINGEXTPROC)
+-     eglGetProcAddress("eglQueryDeviceStringEXT");
+-   const char *extensions;
+-
+-   puts("EGL device extensions string:");
+-
+-   extensions = queryDeviceString(d, EGL_EXTENSIONS);
+-   if (!extensions)
+-      return NULL;
+-
+-   return PrintExtensions(extensions);
+-}
+-
+-
+ static int
+ doOneDisplay(EGLDisplay d, const char *name)
+ {
+@@ -231,7 +203,7 @@ doOneDisplay(EGLDisplay d, const char *name)
+    printf("EGL client APIs: %s\n", eglQueryString(d, EGL_CLIENT_APIS));
+ #endif
+ 
+-   PrintDisplayExtensions(d);
++   PrintExtensions(d);
+ 
+    PrintConfigs(d);
+    eglTerminate(d);
+@@ -239,60 +211,13 @@ doOneDisplay(EGLDisplay d, const char *name)
+    return 0;
+ }
+ 
+-
+-static int
+-doOneDevice(EGLDeviceEXT d, int i)
+-{
+-   PFNEGLGETPLATFORMDISPLAYEXTPROC getPlatformDisplay =
+-     (PFNEGLGETPLATFORMDISPLAYEXTPROC)
+-     eglGetProcAddress("eglGetPlatformDisplayEXT");
+-
+-   printf("Device #%d:\n\n", i);
+-
+-   PrintDeviceExtensions(d);
+-
+-   return doOneDisplay(getPlatformDisplay(EGL_PLATFORM_DEVICE_EXT, d, NULL),
+-                       "Platform Device");
+-}
+-
+-
+-static int
+-doDevices(const char *name)
+-{
+-   PFNEGLQUERYDEVICESEXTPROC queryDevices =
+-     (PFNEGLQUERYDEVICESEXTPROC) eglGetProcAddress("eglQueryDevicesEXT");
+-   EGLDeviceEXT *devices;
+-   EGLint max_devices, num_devices;
+-   EGLint i;
+-   int ret = 0;
+-
+-   printf("%s:\n", name);
+-
+-   if (!queryDevices(0, NULL, &max_devices))
+-      return 1;
+-   devices = calloc(sizeof(EGLDeviceEXT), max_devices);
+-   if (!devices)
+-      return 1;
+-   if (!queryDevices(max_devices, devices, &num_devices))
+-     num_devices = 0;
+-
+-   for (i = 0; i < num_devices; ++i) {
+-       ret += doOneDevice(devices[i], i);
+-   }
+-
+-   free(devices);
+-
+-   return ret;
+-}
+-
+-
+ int
+ main(int argc, char *argv[])
+ {
+    int ret = 0;
+    const char *clientext;
+ 
+-   clientext = PrintDisplayExtensions(EGL_NO_DISPLAY);
++   clientext = PrintExtensions(EGL_NO_DISPLAY);
+    printf("\n");
+ 
+    if (strstr(clientext, "EGL_EXT_platform_base")) {
+@@ -318,13 +243,10 @@ main(int argc, char *argv[])
+            ret += doOneDisplay(getPlatformDisplay(EGL_PLATFORM_X11_EXT,
+                                                   EGL_DEFAULT_DISPLAY,
+                                                   NULL), "X11 platform");
+-       if (strstr(clientext, "EGL_MESA_platform_surfaceless"))
+-           ret += doOneDisplay(getPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA,
++       if (strstr(clientext, "EGL_EXT_platform_device"))
++           ret += doOneDisplay(getPlatformDisplay(EGL_PLATFORM_DEVICE_EXT,
+                                                   EGL_DEFAULT_DISPLAY,
+-                                                  NULL), "Surfaceless platform");
+-       if (strstr(clientext, "EGL_EXT_device_enumeration") &&
+-           strstr(clientext, "EGL_EXT_platform_device"))
+-           ret += doDevices("Device platform");
++                                                  NULL), "Device platform");
+    }
+    else {
+       ret = doOneDisplay(eglGetDisplay(EGL_DEFAULT_DISPLAY), "Default display");
+-- 
+2.25.1
+

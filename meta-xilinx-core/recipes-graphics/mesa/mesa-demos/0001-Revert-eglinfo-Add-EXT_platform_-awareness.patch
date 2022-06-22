@@ -37,8 +37,8 @@ index f7da372b..0124c37c 100644
 -      return NULL;
 +      return;
  
-    column = 0;
-    end = extensions + strlen(extensions);
+ #ifdef EGL_MESA_query_driver
+    if (strstr(extensions, "EGL_MESA_query_driver")) {
 @@ -153,8 +153,6 @@ PrintExtensions(EGLDisplay d)
  
     if (column > 0)
