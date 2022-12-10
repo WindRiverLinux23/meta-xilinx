@@ -21,7 +21,7 @@ index 79dc709..ec2d3b7 100644
  		DRM_FORMAT(ARGB8888),
  		BITS_RGBA_FIXED(8, 8, 8, 8),
 -		.opaque_substitute = DRM_FORMAT_XRGB8888,
- 		.depth = 32,
+ 		.addfb_legacy_depth = 32,
  		.bpp = 32,
  		GL_FORMAT(GL_BGRA_EXT),
 -- 
